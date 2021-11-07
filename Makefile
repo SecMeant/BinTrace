@@ -10,28 +10,38 @@ TEST_SRCDIR:=test
 TEST_TARGETS:=$(TEST_OUTDIR)/tracee
 TEST_CLEAN_TARGETS:=$(TEST_OUTDIR)/tracee $(TEST_OUTDIR)/tracee.o
 
+ifeq ($(V),1)
+	Q:=
+else
+	Q:=@
+endif
+
 all: bintrace $(TEST_TARGETS)
 
 bintrace: bintrace.o
-	$(CC) bintrace.o -o bintrace $(CFLAGS) -lpthread
+	$(Q)$(CC) bintrace.o -o bintrace $(CFLAGS) -lpthread
+	@echo 'CC $<'
 
 %.o: %.c
-	$(CC) -c $< -o $@ $(CFLAGS)
+	$(Q)$(CC) -c $< -o $@ $(CFLAGS)
+	@echo 'CC $<'
 
 # Tests
 ifeq ($(TESTS_ENABLED),1)
 $(TEST_OUTDIR)/tracee: $(TEST_OUTDIR)/tracee.o
-	$(CC) $< -o $@ -O0 -g3
+	$(Q)$(CC) $< -o $@ -O0 -g3
+	@echo 'CC $<'
 
 $(TEST_OUTDIR)/tracee.o: $(TEST_SRCDIR)/tracee.c
-	$(CC) $< -c -o $@ -O0 -g3
+	$(Q)$(CC) $< -c -o $@ -O0 -g3
+	@echo 'CC $<'
 
 runtest:
-	cd test && ./test.py
+	$(Q)cd test && ./test.py
 endif
 
 PHONY += clean
 clean:
-	@rm -f *.o bintrace $(TEST_CLEAN_TARGETS)
+	$(Q)rm -f *.o bintrace $(TEST_CLEAN_TARGETS)
 
 .PHONY:= $(PHONY)
