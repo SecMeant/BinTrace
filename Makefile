@@ -36,6 +36,7 @@ $(TEST_OUTDIR)/tracee.o: $(TEST_SRCDIR)/tracee.c
 	$(Q)$(CC) $< -c -o $@ -O0 -g3
 	@echo 'CC $<'
 
+PHONY += runtest
 runtest:
 	$(Q)cd test && ./test.py
 endif
