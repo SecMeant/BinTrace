@@ -60,9 +60,9 @@ def test1():
         raise TestFailedException(fail_msg)
 
 def run_test(test):
-    print('#' * 60)
+    print(colored('#' * 60, 'white'))
     print(f'Running test: {test.__name__}')
-    print('#' * 60)
+    print(colored('#' * 60, 'white'))
 
     ex = None
 
@@ -76,7 +76,7 @@ def run_test(test):
     else:
         print(colored(f'{test.__name__} PASSED', 'green'))
 
-    print('#' * 60)
+    print(colored('#' * 60 + '\n', 'grey'))
 
 if __name__ == '__main__':
     run_test(test1)
