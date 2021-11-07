@@ -375,7 +375,7 @@ static void alloc_hist()
 
 static void usage()
 {
-	printf("Usage: tracer addr0 [addr1 ...[addrN]]\n");
+	printf("Usage: bintrace binpath addr0 [addr1 ...[addrN]]\n");
 }
 
 /*
@@ -394,12 +394,12 @@ int main(int argc, char **argv)
 	struct user_regs_struct regs;
 	uint64_t ins;
 
-	if (argc < 2) {
+	if (argc < 3) {
 		usage();
 		exit(1);
 	}
 
-	alloc_patches(argv+1, argc-1);
+	alloc_patches(argv+2, argc-2);
 	alloc_hist();
 
 	char* tracee_argv[] = {
@@ -407,7 +407,7 @@ int main(int argc, char **argv)
 		NULL,
 	};
 
-	tracee = create_process("./test/tracee", tracee_argv);
+	tracee = create_process(argv[1], tracee_argv);
 	printf("Created process: %i\n", tracee.pid);
 
 	apply_patches(tracee);
