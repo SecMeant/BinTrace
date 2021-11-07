@@ -10,10 +10,10 @@ TEST_SRCDIR:=test
 TEST_TARGETS:=$(TEST_OUTDIR)/tracee
 TEST_CLEAN_TARGETS:=$(TEST_OUTDIR)/tracee $(TEST_OUTDIR)/tracee.o
 
-all: tracer $(TEST_TARGETS)
+all: bintrace $(TEST_TARGETS)
 
-tracer: tracer.o
-	$(CC) tracer.o -o tracer $(CFLAGS) -lpthread
+bintrace: bintrace.o
+	$(CC) bintrace.o -o bintrace $(CFLAGS) -lpthread
 
 %.o: %.c
 	$(CC) -c $< -o $@ $(CFLAGS)
@@ -32,6 +32,6 @@ endif
 
 PHONY += clean
 clean:
-	@rm -f *.o tracer $(TEST_CLEAN_TARGETS)
+	@rm -f *.o bintrace $(TEST_CLEAN_TARGETS)
 
 .PHONY:= $(PHONY)
