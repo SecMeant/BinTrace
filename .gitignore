@@ -1,0 +1,3 @@
+bintrace
+test/tracee
+*.o
