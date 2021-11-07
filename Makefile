@@ -27,7 +27,7 @@ $(TEST_OUTDIR)/tracee.o: $(TEST_SRCDIR)/tracee.c
 	$(CC) $< -c -o $@ -O0 -g3
 
 runtest:
-	cd test && tests.py
+	cd test && ./test.py
 endif
 
 PHONY += clean
