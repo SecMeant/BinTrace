@@ -61,7 +61,7 @@ def test1():
 
 def run_test(test):
     print('#' * 60)
-    print(f'Running test: {test}')
+    print(f'Running test: {test.__name__}')
     print('#' * 60)
 
     ex = None
@@ -72,9 +72,9 @@ def run_test(test):
         ex = e
 
     if ex:
-        print(colored(f'{test} failed! Reason: {ex}', 'red'))
+        print(colored(f'{test.__name__} FAILED! Reason: {ex}', 'red'))
     else:
-        print(colored(f'{test} PASSED', 'green'))
+        print(colored(f'{test.__name__} PASSED', 'green'))
 
     print('#' * 60)
 
