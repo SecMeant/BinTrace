@@ -25,10 +25,20 @@
 
 #define MAX_HIT_COUNT 0xffffffffffffffff
 
+#define COL_W 25
+
 struct hist_entry_t
 {
 	uint8_t break_index;
 	size_t hit_count;
+	struct user_regs_struct regcaps[5];
+};
+
+struct flags
+{
+	bool regdump;
+	bool color;
+	int flags_set;
 };
 
 struct trace_block_t;
@@ -73,6 +83,10 @@ struct process_t
 	const char *path;
 	void *base_load_addr;
 };
+
+static void reset_color() { printf("\033[0m"); }
+static void set_red_color() { printf("\033[0;31m"); }
+static void set_green_color() { printf("\033[0;33m"); }
 
 static uint64_t proc_maps_parse_begin_range(char *maps_line)
 {
@@ -191,7 +205,13 @@ struct process_t create_process(const char *path, char *const argv[])
 	return proc;
 }
 
-static void dump_hist()
+static void copy_regs(struct user_regs_struct* dst, struct user_regs_struct* src)
+{
+	memcpy(dst, src, sizeof(struct user_regs_struct) );
+	return;
+}
+
+static void dump_hist( struct flags options )
 {
 	printf("\nTrace history dump:\n");
 	for (struct trace_block_t *tb = trace_ctx.master_tb; tb != NULL; tb = tb->hdr.next) {
@@ -207,8 +227,34 @@ static void dump_hist()
 				fprintf(stderr, "Internal error: sample number outside of patch list range (%lu:%lu)\n", off, sampleno);
 				continue;
 			}
-
-			printf("%p: %zu\n", patch_info.entry[sampleno].addr, tb->hist[off].hit_count);
+			
+			if ( options.color ) { set_red_color(); }
+			printf("%p", patch_info.entry[sampleno].addr);
+			if ( options.color ) { reset_color(); }
+			printf(": %zu\n", tb->hist[off].hit_count);
+                        if ( options.regdump )
+			{
+				// print captured register values at each cap moment
+				for ( int i=0; i < tb->hist[off].hit_count; ++i )
+				{
+					struct user_regs_struct curr_regcap = tb->hist[off].regcaps[i];
+					char* line = "\033[0;36m|\033[0m";
+					printf("%s  Reg Dump \033[0;31m#%d\033[0m\n", line, i+1);
+					printf("%s  %s   %s0x%016x\t%s0x%016x\t%s0x%016x\n",line,line,
+							"RAX: \033[;32m", curr_regcap.rax,
+							"\033[0mRDX: \033[0;32m", curr_regcap.rdx,
+							"\033[0mRBP: \033[0;32m", curr_regcap.rbp );
+					reset_color();
+					printf("%s  %s   %s0x%016x\t%s0x%016x\t%s0x%016x\n",line,line,
+							"RBX: \033[;32m", curr_regcap.rbx,
+							"\033[0mRDI: \033[0;32m", curr_regcap.rdi,
+							"\033[0mRSP: \033[0;32m", curr_regcap.rsp );
+					printf("%s  %s   %s0x%016x\t%s0x%016x\t%s0x%016x\n",line,line,
+							"RCX: \033[;32m", curr_regcap.rcx,
+							"\033[0mRSI: \033[0;32m", curr_regcap.rsi,
+							"\033[0mRIP: \033[0;32m", curr_regcap.rip );
+				}
+			}
 		}
 	}
 }
@@ -219,7 +265,10 @@ static void append_trace_block()
 
 	if (new_block == MAP_FAILED) {
 		perror("Failed to append new trace block");
-		dump_hist();
+		struct flags fail_flags;
+		fail_flags.regdump = false;
+		fail_flags.color = false;
+		dump_hist( fail_flags );
 		exit(1);
 	}
 
@@ -283,8 +332,9 @@ static bool try_compress_hit(size_t hit_break_index)
 	return true;
 }
 
-static void trace_hit(uint64_t ip, struct process_t proc)
+static void trace_hit(struct user_regs_struct curr_regs, struct process_t proc, bool regdump)
 {
+	uint64_t ip = curr_regs.rip;
 	size_t sampleno;
 
 	if (trace_ctx.offset >= trace_ctx.current_tb->hdr.hist_size)
@@ -301,7 +351,14 @@ static void trace_hit(uint64_t ip, struct process_t proc)
 			}
 
 			trace_hit_fix_exec(ip, proc, patch_info.entry[i]);
-
+			if ( regdump )
+			{
+				copy_regs( 
+					&trace_ctx.current_tb->hist[trace_ctx.offset-1].regcaps[
+						trace_ctx.current_tb->hist[trace_ctx.offset-1].hit_count-1
+						],
+					&curr_regs);
+			}
 			return;
 		}
 	}
@@ -375,7 +432,8 @@ static void alloc_hist()
 
 static void usage()
 {
-	printf("Usage: bintrace binpath addr0 [addr1 ...[addrN]]\n");
+	printf("Usage: bintrace [..FLAGS[-r]] binpath addr0 [addr1 ...[addrN]]\n");
+	printf("  -r  | Register Dump Mode\n");
 }
 
 /*
@@ -393,8 +451,41 @@ int main(int argc, char **argv)
 	struct process_t tracee;
 	struct user_regs_struct regs;
 	uint64_t ins;
+	
+	int opt;
+	struct flags cmd_flags;
+	cmd_flags.flags_set = 0;
+	cmd_flags.regdump = false;
+	cmd_flags.color = true;
+	while((opt = getopt(argc, argv, "-:rc")) != -1) 
+	{
+		bool early_break = false;
+		switch(opt)
+		{ 
+		    case 'r': 
+			//printf("reg dump mode set: %c\n", opt); 
+			cmd_flags.regdump = true;
+			++cmd_flags.flags_set;
+			break; 
+		    case 'c': 
+			//printf("colored output disabled: %c\n", opt); 
+			cmd_flags.color= false;
+			++cmd_flags.flags_set;
+			break; 
+		    case '?': 
+			printf("unknown option: %c\n", optopt);
+			usage();
+			exit(1);
+			break;
+		    default:
+			early_break = true;
+			break;	
+		} 
+		if ( early_break) { break; }
+	} 
+      
 
-	if (argc < 3) {
+	if (argc - cmd_flags.flags_set < 3) {
 		usage();
 		exit(1);
 	}
@@ -407,7 +498,7 @@ int main(int argc, char **argv)
 		NULL,
 	};
 
-	tracee = create_process(argv[1], tracee_argv);
+	tracee = create_process(argv[1 + cmd_flags.flags_set], tracee_argv);
 	printf("Created process: %i\n", tracee.pid);
 
 	apply_patches(tracee);
@@ -439,7 +530,7 @@ int main(int argc, char **argv)
 
 			//ptrace(PTRACE_POKETEXT, tracee.pid, regs.rip, ins);
 
-			trace_hit(regs.rip, tracee);
+			trace_hit(regs, tracee, cmd_flags.regdump);
 		} else {
 			fprintf(stderr, "Unexpected tracee event, ins: %lx, rip: %llx\n", ins, regs.rip);
 			getchar();
@@ -450,6 +541,6 @@ int main(int argc, char **argv)
 	}
 
 	printf("Process %i exited with %i\n", tracee.pid, tracee.status);
-	dump_hist();
+	dump_hist(cmd_flags);
 	// Let the kernel do the cleaning
 }

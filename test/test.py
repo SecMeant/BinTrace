@@ -31,10 +31,10 @@ def get_sym_addr(elf, symname):
 def test1():
     TEST1_EXPECTED_OUTPUT = \
         "Trace history dump:\n" \
-        "0x5555555551bf: 2\n" \
-        "0x5555555551d3: 1\n" \
-        "0x5555555551bf: 1\n" \
-        "0x5555555551d3: 1\n"
+        "0x5555555551b8: 2\n" \
+        "0x5555555551cc: 1\n" \
+        "0x5555555551b8: 1\n" \
+        "0x5555555551cc: 1\n"
 
 
     # find addresses of add, sub and nop
@@ -47,9 +47,8 @@ def test1():
         print('Missing symbols!')
         exit(1)
 
-    test1_cmd = f'{BINTRACE_PATH} {TRACEE_PATH} {hex(add_addr)} {hex(sub_addr)}'
-    stdout = subprocess.check_output(test1_cmd, shell=True).decode()
-
+    test1_cmd = f'{BINTRACE_PATH} -c {TRACEE_PATH} {hex(add_addr)} {hex(sub_addr)}'
+    stdout = subprocess.check_output(test1_cmd, shell=True).decode().split('\n\n')[1]
     if stdout.find(TEST1_EXPECTED_OUTPUT) == -1:
         fail_msg = "Unexpected output.\n" \
                    "Expected that output contains:\n" \
