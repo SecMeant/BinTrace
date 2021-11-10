@@ -25,10 +25,29 @@
 
 #define MAX_HIT_COUNT 0xffffffffffffffff
 
+#define COL_W 25
+#define COLOR_RED "\033[0;31m"
+#define COLOR_GREEN "\033[0;33m"
+#define COLOR_CYAN "\033[0;36m"
+#define COLOR_RESET "\033[0m"
+
+#define STR_RED(s) COLOR_RED s COLOR_RESET
+#define STR_GREEN(s) COLOR_GREEN s COLOR_RESET
+#define STR_CYAN(s) COLOR_CYAN s COLOR_RESET
+#define STR_COLORED(color, str) COLOR_##color str COLOR_RESET
+
 struct hist_entry_t
 {
 	uint8_t break_index;
 	size_t hit_count;
+	struct user_regs_struct regcaps[5];
+};
+
+struct program_opts
+{
+	uint8_t regdump	: 1,
+		color	: 1;
+	int flags_set;
 };
 
 struct trace_block_t;
@@ -73,6 +92,9 @@ struct process_t
 	const char *path;
 	void *base_load_addr;
 };
+
+// Global vars here
+struct program_opts opts;
 
 static uint64_t proc_maps_parse_begin_range(char *maps_line)
 {
@@ -191,6 +213,12 @@ struct process_t create_process(const char *path, char *const argv[])
 	return proc;
 }
 
+static void copy_regs(struct user_regs_struct* dst, struct user_regs_struct* src)
+{
+	memcpy(dst, src, sizeof(struct user_regs_struct) );
+	return;
+}
+
 static void dump_hist()
 {
 	printf("\nTrace history dump:\n");
@@ -207,8 +235,84 @@ static void dump_hist()
 				fprintf(stderr, "Internal error: sample number outside of patch list range (%lu:%lu)\n", off, sampleno);
 				continue;
 			}
+		
+			char tmpstr[50];	
+			if (opts.color) { 
+				sprintf(
+					tmpstr, 
+					STR_RED("%p") COLOR_RESET ": %zu\n",
+					patch_info.entry[sampleno].addr, 
+					tb->hist[off].hit_count
+					);
+			}
+			else
+			{
+				sprintf(
+					tmpstr, 
+					"%p: %zu\n", 
+					patch_info.entry[sampleno].addr, 
+					tb->hist[off].hit_count
+					);
+	                }
+			printf( tmpstr );
 
-			printf("%p: %zu\n", patch_info.entry[sampleno].addr, tb->hist[off].hit_count);
+			if ( opts.regdump )
+			{
+				// set up color output stuffs
+				char* line = STR_COLORED(RESET,"|");
+				char* dumpheader = STR_COLORED(RESET,"Regdump ");
+				char* messages[] =
+				{
+					(char*)("RAX: " COLOR_RESET),
+					(char*)("RDX: " COLOR_RESET),
+					(char*)("RBP: " COLOR_RESET),
+					(char*)("RBX: " COLOR_RESET),
+					(char*)("RDI: " COLOR_RESET),
+					(char*)("RSP: " COLOR_RESET),
+					(char*)("RCX: " COLOR_RESET),
+					(char*)("RSI: " COLOR_RESET),
+					(char*)("RIP: " COLOR_RESET)
+				};
+				if ( opts.color )
+				{
+					line = STR_COLORED(CYAN,"|");
+					dumpheader = STR_COLORED(CYAN,"Regdump ");
+					messages[0] = (char*)(COLOR_RESET "RAX: " COLOR_GREEN);
+					messages[1] = (char*)(COLOR_RESET "RDX: " COLOR_GREEN);
+					messages[2] = (char*)(COLOR_RESET "RBP: " COLOR_GREEN);
+					messages[3] = (char*)(COLOR_RESET "RBX: " COLOR_GREEN);
+					messages[4] = (char*)(COLOR_RESET "RDI: " COLOR_GREEN);
+					messages[5] = (char*)(COLOR_RESET "RSP: " COLOR_GREEN);
+					messages[6] = (char*)(COLOR_RESET "RCX: " COLOR_GREEN);
+					messages[7] = (char*)(COLOR_RESET "RSI: " COLOR_GREEN);
+					messages[8] = (char*)(COLOR_RESET "RIP: " COLOR_GREEN);
+				}
+				// print captured register values at each cap moment
+				for ( int i=0; i < tb->hist[off].hit_count; ++i )
+				{
+					struct user_regs_struct curr_regcap = tb->hist[off].regcaps[i];
+
+					printf("%s  %s%d\n", line, dumpheader, i+1);
+					printf("%s  %s   %s0x%016x\t%s0x%016x\t%s0x%016x\n",
+						line, line,
+						messages[0], curr_regcap.rax,
+						messages[1], curr_regcap.rdx,
+						messages[2], curr_regcap.rbp
+					);
+					printf("%s  %s   %s0x%016x\t%s0x%016x\t%s0x%016x\n",
+						line, line,
+						messages[3], curr_regcap.rbx,
+						messages[4], curr_regcap.rdi,
+						messages[5], curr_regcap.rsp
+					);
+					printf("%s  %s   %s0x%016x\t%s0x%016x\t%s0x%016x\n",
+						line, line,
+						messages[6], curr_regcap.rcx,
+						messages[7], curr_regcap.rsi,
+						messages[8], curr_regcap.rip
+					);
+				}
+			}
 		}
 	}
 }
@@ -283,8 +387,9 @@ static bool try_compress_hit(size_t hit_break_index)
 	return true;
 }
 
-static void trace_hit(uint64_t ip, struct process_t proc)
+static void trace_hit(struct user_regs_struct curr_regs, struct process_t proc)
 {
+	uint64_t ip = curr_regs.rip;
 	size_t sampleno;
 
 	if (trace_ctx.offset >= trace_ctx.current_tb->hdr.hist_size)
@@ -301,7 +406,14 @@ static void trace_hit(uint64_t ip, struct process_t proc)
 			}
 
 			trace_hit_fix_exec(ip, proc, patch_info.entry[i]);
-
+			if ( opts.regdump )
+			{
+				copy_regs( 
+					&trace_ctx.current_tb->hist[trace_ctx.offset-1].regcaps[
+						trace_ctx.current_tb->hist[trace_ctx.offset-1].hit_count-1
+						],
+					&curr_regs);
+			}
 			return;
 		}
 	}
@@ -375,7 +487,8 @@ static void alloc_hist()
 
 static void usage()
 {
-	printf("Usage: bintrace binpath addr0 [addr1 ...[addrN]]\n");
+	printf("Usage: bintrace [..FLAGS[-r]] binpath addr0 [addr1 ...[addrN]]\n");
+	printf("  -r  | Register Dump Mode\n");
 }
 
 /*
@@ -393,8 +506,39 @@ int main(int argc, char **argv)
 	struct process_t tracee;
 	struct user_regs_struct regs;
 	uint64_t ins;
+	
+	int opt;
+	opts.color = 1;//enables color mode by default
+	// grab the -flag args
+	while((opt = getopt(argc, argv, "-:rc")) != -1) 
+	{
+		bool early_break = false;
+		switch(opt)
+		{ 
+		    case 'r': 
+			//printf("reg dump mode set: %c\n", opt); 
+			opts.regdump ^= 1;
+			++opts.flags_set;
+			break; 
+		    case 'c': 
+			//printf("colored output disabled: %c\n", opt); 
+			opts.color ^= 1;
+			++opts.flags_set;
+			break; 
+		    case '?': 
+			printf("unknown option: %c\n", opt);
+			usage();
+			exit(1);
+			break;
+		    default:
+			early_break = true;
+			break;	
+		} 
+		if ( early_break) { break; }
+	} 
+      
 
-	if (argc < 3) {
+	if (argc - opts.flags_set < 3) {
 		usage();
 		exit(1);
 	}
@@ -407,7 +551,7 @@ int main(int argc, char **argv)
 		NULL,
 	};
 
-	tracee = create_process(argv[1], tracee_argv);
+	tracee = create_process(argv[1 + opts.flags_set], tracee_argv);
 	printf("Created process: %i\n", tracee.pid);
 
 	apply_patches(tracee);
@@ -439,7 +583,7 @@ int main(int argc, char **argv)
 
 			//ptrace(PTRACE_POKETEXT, tracee.pid, regs.rip, ins);
 
-			trace_hit(regs.rip, tracee);
+			trace_hit(regs, tracee);
 		} else {
 			fprintf(stderr, "Unexpected tracee event, ins: %lx, rip: %llx\n", ins, regs.rip);
 			getchar();
@@ -453,3 +597,4 @@ int main(int argc, char **argv)
 	dump_hist();
 	// Let the kernel do the cleaning
 }
+
