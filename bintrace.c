@@ -288,24 +288,24 @@ static void dump_hist()
 					messages[8] = (char*)(COLOR_RESET "RIP: " COLOR_GREEN);
 				}
 				// print captured register values at each cap moment
-				for ( int i=0; i < tb->hist[off].hit_count; ++i )
+				for ( size_t i = 0; i < tb->hist[off].hit_count; ++i )
 				{
 					struct user_regs_struct curr_regcap = tb->hist[off].regcaps[i];
 
-					printf("%s  %s%d\n", line, dumpheader, i+1);
-					printf("%s  %s   %s0x%016x\t%s0x%016x\t%s0x%016x\n",
+					printf("%s  %s%lu\n", line, dumpheader, i+1);
+					printf("%s  %s   %s0x%016llx\t%s0x%016llx\t%s0x%016llx\n",
 						line, line,
 						messages[0], curr_regcap.rax,
 						messages[1], curr_regcap.rdx,
 						messages[2], curr_regcap.rbp
 					);
-					printf("%s  %s   %s0x%016x\t%s0x%016x\t%s0x%016x\n",
+					printf("%s  %s   %s0x%016llx\t%s0x%016llx\t%s0x%016llx\n",
 						line, line,
 						messages[3], curr_regcap.rbx,
 						messages[4], curr_regcap.rdi,
 						messages[5], curr_regcap.rsp
 					);
-					printf("%s  %s   %s0x%016x\t%s0x%016x\t%s0x%016x\n",
+					printf("%s  %s   %s0x%016llx\t%s0x%016llx\t%s0x%016llx\n",
 						line, line,
 						messages[6], curr_regcap.rcx,
 						messages[7], curr_regcap.rsi,
@@ -390,7 +390,6 @@ static bool try_compress_hit(size_t hit_break_index)
 static void trace_hit(struct user_regs_struct curr_regs, struct process_t proc)
 {
 	uint64_t ip = curr_regs.rip;
-	size_t sampleno;
 
 	if (trace_ctx.offset >= trace_ctx.current_tb->hdr.hist_size)
 		append_trace_block();
@@ -552,7 +551,7 @@ int main(int argc, char **argv)
 	};
 
 	tracee = create_process(argv[1 + opts.flags_set], tracee_argv);
-	printf("Created process: %i\n", tracee.pid);
+	printf("Created process: %i, loaded at:%p\n", tracee.pid, tracee.base_load_addr);
 
 	apply_patches(tracee);
 

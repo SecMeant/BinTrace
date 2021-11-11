@@ -7,6 +7,8 @@ import elftools.elf.segments
 
 from termcolor import colored
 
+import re
+
 ELF_FLAG_R = 1 << 2
 ELF_FLAG_W = 1 << 1
 ELF_FLAG_X = 1 << 0
@@ -28,15 +30,17 @@ def get_sym_addr(elf, symname):
 
     return sym
 
+def parse_proc_load_addr(stdout: str):
+    p = re.compile('loaded at:(0x)?([0-9a-fA-F]+)')
+
+    m = p.search(stdout)
+
+    if not m:
+        return None
+
+    return int(m.groups()[-1], 16)
+
 def test1():
-    TEST1_EXPECTED_OUTPUT = \
-        "Trace history dump:\n" \
-        "0x5555555551b8: 2\n" \
-        "0x5555555551cc: 1\n" \
-        "0x5555555551b8: 1\n" \
-        "0x5555555551cc: 1\n"
-
-
     # find addresses of add, sub and nop
     elf = elftools.elf.elffile.ELFFile(open('./tracee', 'rb'))
 
@@ -48,11 +52,24 @@ def test1():
         exit(1)
 
     test1_cmd = f'{BINTRACE_PATH} -c {TRACEE_PATH} {hex(add_addr)} {hex(sub_addr)}'
-    stdout = subprocess.check_output(test1_cmd, shell=True).decode().split('\n\n')[1]
-    if stdout.find(TEST1_EXPECTED_OUTPUT) == -1:
+    stdout = subprocess.check_output(test1_cmd, shell=True).decode()
+
+    load_addr = parse_proc_load_addr(stdout)
+
+    if not load_addr:
+        raise TestFailedException(f'Failed to obtain process load address from stdout:\n{stdout}')
+
+    test1_expected_output = \
+        "Trace history dump:\n" \
+        f"{hex(load_addr + add_addr)}: 2\n" \
+        f"{hex(load_addr + sub_addr)}: 1\n" \
+        f"{hex(load_addr + add_addr)}: 1\n" \
+        f"{hex(load_addr + sub_addr)}: 1\n"
+
+    if stdout.find(test1_expected_output) == -1:
         fail_msg = "Unexpected output.\n" \
                    "Expected that output contains:\n" \
-                   f"{TEST1_EXPECTED_OUTPUT}\n" \
+                   f"{test1_expected_output}\n" \
                    "\nGot:\n" \
                    f"{stdout}\n"
 

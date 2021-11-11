@@ -1,5 +1,5 @@
 CC:=gcc
-CFLAGS:=-O3
+CFLAGS:=-O3 -Wall -Wextra
 PHONY:=
 
 TESTS_ENABLED:=1
