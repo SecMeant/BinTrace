@@ -36,6 +36,8 @@
 #define STR_CYAN(s) COLOR_CYAN s COLOR_RESET
 #define STR_COLORED(color, str) COLOR_##color str COLOR_RESET
 
+#define ARRAY_ELEMS(arr) (sizeof(arr) / sizeof(arr[0]))
+
 struct hist_entry_t
 {
 	uint8_t break_index;
@@ -47,7 +49,8 @@ struct program_opts
 {
 	uint8_t regdump	: 1,
 		color	: 1;
-	int flags_set;
+	char **tracee_argv;
+	char *tracee_path;
 };
 
 struct trace_block_t;
@@ -486,9 +489,70 @@ static void alloc_hist()
 
 static void usage()
 {
-	printf("Usage: bintrace [..FLAGS[-r]] binpath addr0 [addr1 ...[addrN]]\n");
-	printf("  -r  | Register Dump Mode\n");
+	printf(
+		"Usage: bintrace [..FLAGS] binpath addr0 [addr1 ...[addrN]] [-- tracee_arg1 ...[tracee_argN]]\n"
+		" FLAGS:\n"
+		"  -r  | Register Dump Mode\n"
+		"  -c  | Disable colors\n"
+	);
 }
+
+static void parse_cmdline(int argc, char **argv)
+{
+	int i = 1;
+	char *patches_argv[argc];
+	size_t cur_patch_idx = 0;
+
+	opts.tracee_path = NULL;
+	opts.tracee_argv = NULL;
+	opts.color = 1; // Enables color mode by default
+
+	while (i < argc) {
+		if (strcmp(argv[i], "--") == 0) {
+			if (i + 1 == argc) {
+				usage();
+				exit(1);
+			}
+
+			// Patch "--" with bin's name of the tracee, this trick will allow us
+			// to cheaply create argv for tracee.
+			argv[i] = opts.tracee_path;
+
+			opts.tracee_argv = argv + i;
+			break;
+		} else if (argv[i][0] != '-') {
+			if (opts.tracee_path == NULL) {
+				opts.tracee_path = argv[i];
+			} else {
+				patches_argv[cur_patch_idx] = argv[i];
+				++cur_patch_idx;
+			}
+		} else if (strcmp(argv[i], "-r") == 0) {
+			opts.regdump = 1;
+		} else if (strcmp(argv[i], "-c") == 0) {
+			opts.color = 0;
+		} else {
+			fprintf(stderr, "Warning: unknown option \"%s\". Ignored.\n", argv[i]);
+		}
+
+		++i;
+	}
+
+	if (opts.tracee_path == NULL) {
+		usage();
+		exit(1);
+	}
+
+	if (cur_patch_idx == 0) {
+		usage();
+		exit(1);
+	}
+
+	// TODO(holz): Move this outside parse_cmdline (patches_argv has to be moved too then)
+	alloc_patches(patches_argv, cur_patch_idx);
+}
+
+#define ARR_SUZE
 
 /*
  * Pseudo code of how it works:
@@ -505,52 +569,21 @@ int main(int argc, char **argv)
 	struct process_t tracee;
 	struct user_regs_struct regs;
 	uint64_t ins;
-	
-	int opt;
-	opts.color = 1;//enables color mode by default
-	// grab the -flag args
-	while((opt = getopt(argc, argv, "-:rc")) != -1) 
-	{
-		bool early_break = false;
-		switch(opt)
-		{ 
-		    case 'r': 
-			//printf("reg dump mode set: %c\n", opt); 
-			opts.regdump ^= 1;
-			++opts.flags_set;
-			break; 
-		    case 'c': 
-			//printf("colored output disabled: %c\n", opt); 
-			opts.color ^= 1;
-			++opts.flags_set;
-			break; 
-		    case '?': 
-			printf("unknown option: %c\n", opt);
-			usage();
-			exit(1);
-			break;
-		    default:
-			early_break = true;
-			break;	
-		} 
-		if ( early_break) { break; }
-	} 
-      
 
-	if (argc - opts.flags_set < 3) {
-		usage();
-		exit(1);
-	}
+	parse_cmdline(argc, argv);
 
-	alloc_patches(argv+2, argc-2);
 	alloc_hist();
 
-	char* tracee_argv[] = {
-		"tracee",
+	char* def_tracee_argv[] = {
+		opts.tracee_path,
 		NULL,
 	};
 
-	tracee = create_process(argv[1 + opts.flags_set], tracee_argv);
+	if (opts.tracee_argv == NULL) {
+		opts.tracee_argv = def_tracee_argv;
+	}
+
+	tracee = create_process(opts.tracee_path, opts.tracee_argv);
 	printf("Created process: %i, loaded at:%p\n", tracee.pid, tracee.base_load_addr);
 
 	apply_patches(tracee);
