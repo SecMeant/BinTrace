@@ -552,7 +552,35 @@ static void parse_cmdline(int argc, char **argv)
 	alloc_patches(patches_argv, cur_patch_idx);
 }
 
-#define ARR_SUZE
+const char* SIG2STR[] = {
+       [SIGUSR1] = "SIGUSR1",
+       [SIGSEGV] = "SIGSEGV",
+       [SIGUSR2] = "SIGUSR2",
+       [SIGPIPE] = "SIGPIPE",
+       [SIGALRM] = "SIGALRM",
+       [SIGTERM] = "SIGTERM",
+       [SIGSTKFLT] = "SIGSTKFLT",
+       [SIGCHLD] = "SIGCHLD",
+       [SIGCONT] = "SIGCONT",
+       [SIGSTOP] = "SIGSTOP",
+       [SIGTSTP] = "SIGTSTP",
+       [SIGTTIN] = "SIGTTIN",
+       [SIGTTOU] = "SIGTTOU",
+       [SIGURG] = "SIGURG",
+       [SIGXCPU] = "SIGXCPU",
+       [SIGXFSZ] = "SIGXFSZ",
+       [SIGVTALRM] = "SIGVTALRM",
+       [SIGPROF] = "SIGPROF",
+       [SIGWINCH] = "SIGWINCH",
+       [SIGIO] = "SIGIO",
+       [SIGPWR] = "SIGPWR",
+       [SIGSYS] = "SIGSYS",
+};
+
+static int should_ignore_signal(int sig)
+{
+	return 0;
+}
 
 /*
  * Pseudo code of how it works:
@@ -569,6 +597,11 @@ int main(int argc, char **argv)
 	struct process_t tracee;
 	struct user_regs_struct regs;
 	uint64_t ins;
+
+	// Unexpected events in a row.
+	// Used to break out of the loop if we keep on hitting these.
+	uint64_t ue_in_row = 0; 
+	const uint64_t MAX_UE_IN_ROW = 4;
 
 	parse_cmdline(argc, argv);
 
@@ -591,11 +624,37 @@ int main(int argc, char **argv)
 	if (ptrace(PTRACE_CONT, tracee.pid, NULL, NULL) == -1)
 		perror("trace2");
 
-	while (1) {
+	while (ue_in_row < MAX_UE_IN_ROW) {
 		waitpid(tracee.pid, &tracee.status, 0);
 
 		if (WIFEXITED(tracee.status))
 			break;
+
+		if (WIFSIGNALED(tracee.status)) {
+			fprintf(stderr, "Tracee terminated by signal %d\n", WTERMSIG(tracee.status));
+
+			if (WCOREDUMP(tracee.status))
+				fprintf(stderr, "(core dumped)");
+
+			break;
+		}
+
+		if (WIFSTOPPED(tracee.status)) {
+			int sig = WSTOPSIG(tracee.status);
+
+			if (sig != SIGTRAP) {
+				const char * const sigstr = 
+					(sig < (int) ARRAY_ELEMS(SIG2STR) && sig >= 0) ? SIG2STR[sig] : "???";
+
+				fprintf(stderr, "Unexpected tracee event %d (%s)\n", sig, sigstr);
+
+				if (!should_ignore_signal(sig))
+					break;
+
+				++ue_in_row;
+				continue;
+			}
+		}
 
 		ptrace(PTRACE_GETREGS, tracee.pid, NULL, &regs);
 
@@ -607,18 +666,12 @@ int main(int argc, char **argv)
 		ins = ptrace(PTRACE_PEEKTEXT, tracee.pid, regs.rip, NULL);
 
 		if ((ins & 0xFF) == BREAK_OPCODE) {
-
-			/* Patching int3 with nop */
-			//// Patch breakpoint with nop
-			//ins &= ~0xFF;
-			//ins |= NOP_OPCODE;
-
-			//ptrace(PTRACE_POKETEXT, tracee.pid, regs.rip, ins);
-
+			ue_in_row = 0;
 			trace_hit(regs, tracee);
 		} else {
 			fprintf(stderr, "Unexpected tracee event, ins: %lx, rip: %llx\n", ins, regs.rip);
-			getchar();
+			fprintf(stderr, "PANIC!");
+			break;
 		}
 
 		if (ptrace(PTRACE_CONT, tracee.pid, NULL, NULL) == -1)
