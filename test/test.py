@@ -70,7 +70,7 @@ def test1():
         print('Missing symbols!')
         exit(1)
 
-    test1_cmd = f'{BINTRACE_PATH} -c {TRACEE_PATH} {hex(add_addr)} {hex(sub_addr)}'
+    test1_cmd = f'{BINTRACE_PATH} {TRACEE_PATH} {hex(add_addr)} {hex(sub_addr)}'
     stdout = subprocess.check_output(test1_cmd, shell=True).decode()
 
     load_addr = parse_proc_load_addr(stdout)

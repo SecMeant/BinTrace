@@ -47,8 +47,7 @@ struct hist_entry_t
 
 struct program_opts
 {
-	uint8_t regdump	: 1,
-		color	: 1;
+	uint8_t regdump	: 1;
 	char **tracee_argv;
 	char *tracee_path;
 };
@@ -240,79 +239,44 @@ static void dump_hist()
 			}
 		
 			char tmpstr[50];	
-			if (opts.color) { 
-				sprintf(
-					tmpstr, 
-					STR_RED("%p") COLOR_RESET ": %zu\n",
-					patch_info.entry[sampleno].addr, 
-					tb->hist[off].hit_count
-					);
-			}
-			else
-			{
-				sprintf(
-					tmpstr, 
-					"%p: %zu\n", 
-					patch_info.entry[sampleno].addr, 
-					tb->hist[off].hit_count
-					);
-	                }
+			sprintf(
+				tmpstr, 
+				"%p: %zu\n", 
+				patch_info.entry[sampleno].addr, 
+				tb->hist[off].hit_count
+			);
 			printf( tmpstr );
 
 			if ( opts.regdump )
 			{
-				// set up color output stuffs
-				char* line = STR_COLORED(RESET,"|");
-				char* dumpheader = STR_COLORED(RESET,"Regdump ");
-				char* messages[] =
-				{
-					(char*)("RAX: " COLOR_RESET),
-					(char*)("RDX: " COLOR_RESET),
-					(char*)("RBP: " COLOR_RESET),
-					(char*)("RBX: " COLOR_RESET),
-					(char*)("RDI: " COLOR_RESET),
-					(char*)("RSP: " COLOR_RESET),
-					(char*)("RCX: " COLOR_RESET),
-					(char*)("RSI: " COLOR_RESET),
-					(char*)("RIP: " COLOR_RESET)
-				};
-				if ( opts.color )
-				{
-					line = STR_COLORED(CYAN,"|");
-					dumpheader = STR_COLORED(CYAN,"Regdump ");
-					messages[0] = (char*)(COLOR_RESET "RAX: " COLOR_GREEN);
-					messages[1] = (char*)(COLOR_RESET "RDX: " COLOR_GREEN);
-					messages[2] = (char*)(COLOR_RESET "RBP: " COLOR_GREEN);
-					messages[3] = (char*)(COLOR_RESET "RBX: " COLOR_GREEN);
-					messages[4] = (char*)(COLOR_RESET "RDI: " COLOR_GREEN);
-					messages[5] = (char*)(COLOR_RESET "RSP: " COLOR_GREEN);
-					messages[6] = (char*)(COLOR_RESET "RCX: " COLOR_GREEN);
-					messages[7] = (char*)(COLOR_RESET "RSI: " COLOR_GREEN);
-					messages[8] = (char*)(COLOR_RESET "RIP: " COLOR_GREEN);
-				}
-				// print captured register values at each cap moment
 				for ( size_t i = 0; i < tb->hist[off].hit_count; ++i )
 				{
 					struct user_regs_struct curr_regcap = tb->hist[off].regcaps[i];
 
-					printf("%s  %s%lu\n", line, dumpheader, i+1);
-					printf("%s  %s   %s0x%016llx\t%s0x%016llx\t%s0x%016llx\n",
-						line, line,
-						messages[0], curr_regcap.rax,
-						messages[1], curr_regcap.rdx,
-						messages[2], curr_regcap.rbp
-					);
-					printf("%s  %s   %s0x%016llx\t%s0x%016llx\t%s0x%016llx\n",
-						line, line,
-						messages[3], curr_regcap.rbx,
-						messages[4], curr_regcap.rdi,
-						messages[5], curr_regcap.rsp
-					);
-					printf("%s  %s   %s0x%016llx\t%s0x%016llx\t%s0x%016llx\n",
-						line, line,
-						messages[6], curr_regcap.rcx,
-						messages[7], curr_regcap.rsi,
-						messages[8], curr_regcap.rip
+					printf(	"|  Regdump %lu\n"
+						"|  |   RAX: 0x%016llx\tRCX: 0x%016llx\tRDX: 0x%016llx\n"
+						"|  |   RBX: 0x%016llx\tRSP: 0x%016llx\tRBP: 0x%016llx\n"
+						"|  |   RSI: 0x%016llx\tRDI: 0x%016llx\t\n"
+						"|  |    R8: 0x%016llx\t R9: 0x%016llx\tR10: 0x%016llx\n"
+						"|  |   R11: 0x%016llx\tR12: 0x%016llx\tR13: 0x%016llx\n"
+						"|  |   R14: 0x%016llx\tR15: 0x%016llx\t\n\n",
+						i + 1,
+						curr_regcap.rax,
+						curr_regcap.rcx,
+						curr_regcap.rdx,
+						curr_regcap.rbx,
+						curr_regcap.rsp,
+						curr_regcap.rbp,
+						curr_regcap.rsi,
+						curr_regcap.rdi,
+						curr_regcap.r8,
+						curr_regcap.r9,
+						curr_regcap.r10,
+						curr_regcap.r11,
+						curr_regcap.r12,
+						curr_regcap.r13,
+						curr_regcap.r14,
+						curr_regcap.r15
 					);
 				}
 			}
@@ -505,7 +469,6 @@ static void parse_cmdline(int argc, char **argv)
 
 	opts.tracee_path = NULL;
 	opts.tracee_argv = NULL;
-	opts.color = 1; // Enables color mode by default
 
 	while (i < argc) {
 		if (strcmp(argv[i], "--") == 0) {
@@ -529,8 +492,6 @@ static void parse_cmdline(int argc, char **argv)
 			}
 		} else if (strcmp(argv[i], "-r") == 0) {
 			opts.regdump = 1;
-		} else if (strcmp(argv[i], "-c") == 0) {
-			opts.color = 0;
 		} else {
 			fprintf(stderr, "Warning: unknown option \"%s\". Ignored.\n", argv[i]);
 		}
