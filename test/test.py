@@ -2,10 +2,29 @@
 
 import subprocess
 
+from sys import stdout
+
 import elftools.elf.elffile
 import elftools.elf.segments
 
-from termcolor import colored
+class termcolors:
+    RED   = '\033[31m'
+    GREEN = '\033[32m'
+    GREY  = '\033[2;37m'
+    WHITE = '\033[37m'
+    RESET = '\033[0m'
+
+def printcolored_(message: str, color: termcolors, end: str):
+    stdout.write(color)
+    stdout.write(message)
+    stdout.write(end)
+    stdout.write(termcolors.RESET)
+
+def printcolored(message: str, color: termcolors):
+    printcolored_(message, color, '')
+
+def printlinecolored(message: str, color: termcolors):
+    printcolored_(message, color, '\n')
 
 import re
 
@@ -76,9 +95,9 @@ def test1():
         raise TestFailedException(fail_msg)
 
 def run_test(test):
-    print(colored('#' * 60, 'white'))
+    printlinecolored('#' * 60, termcolors.WHITE)
     print(f'Running test: {test.__name__}')
-    print(colored('#' * 60, 'white'))
+    printlinecolored('#' * 60, termcolors.WHITE)
 
     ex = None
 
@@ -88,11 +107,11 @@ def run_test(test):
         ex = e
 
     if ex:
-        print(colored(f'{test.__name__} FAILED! Reason: {ex}', 'red'))
+        printlinecolored(f'{test.__name__} FAILED! Reason: {ex}', termcolors.RED)
     else:
-        print(colored(f'{test.__name__} PASSED', 'green'))
+        printlinecolored(f'{test.__name__} PASSED', termcolors.GREEN)
 
-    print(colored('#' * 60 + '\n', 'grey'))
+    printlinecolored('#' * 60 + '\n', termcolors.GREY)
 
 if __name__ == '__main__':
     run_test(test1)
