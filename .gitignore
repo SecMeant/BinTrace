@@ -1,3 +1,4 @@
 bintrace
 test/tracee
 *.o
+*.so

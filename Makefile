@@ -16,10 +16,14 @@ else
 	Q:=@
 endif
 
-all: bintrace $(TEST_TARGETS)
+all: bintrace libbintraceprobe.so $(TEST_TARGETS)
 
 bintrace: bintrace.o
 	$(Q)$(CC) bintrace.o -o bintrace $(CFLAGS) -lpthread
+	@echo 'CC $<'
+
+libbintraceprobe.so: bintraceprobe.c
+	$(Q)$(CC) bintraceprobe.c -o libbintraceprobe.so $(CFLAGS) -shared
 	@echo 'CC $<'
 
 %.o: %.c
@@ -43,6 +47,6 @@ endif
 
 PHONY += clean
 clean:
-	$(Q)rm -f *.o bintrace $(TEST_CLEAN_TARGETS)
+	$(Q)rm -f *.o bintrace libbintraceprobe.so $(TEST_CLEAN_TARGETS)
 
 .PHONY:= $(PHONY)

@@ -77,7 +77,13 @@ struct trace_context_t
 struct patch_entry_t
 {
 	void *addr;
-	uint8_t patch;
+
+	union {
+		uint8_t patch;
+		uint8_t probe_patch[5];
+	};
+
+	uint8_t is_probe: 1;
 };
 
 // Information about patched locations and how to restore them.
@@ -86,6 +92,14 @@ struct patch_info_t
 	struct patch_entry_t *entry;
 	size_t size;
 } patch_info;
+
+// Intermediate information about patched location
+// used when parsing the user arguments.
+struct patch_argv_info_t
+{
+	char *argv; // Pointer to argv that has the address of the patch
+	uint8_t is_probe : 1;
+};
 
 struct process_t
 {
@@ -189,6 +203,9 @@ struct process_t create_process(const char *path, char *const argv[])
 
 		ptrace(PTRACE_TRACEME);
 		personality(ADDR_NO_RANDOMIZE);
+
+		// TODO: don't preload if user did not setup any probes
+		setenv("LD_PRELOAD", "./libbintraceprobe.so", 1);
 
 		execv(path, argv);
 		fprintf(stderr, "Failed to execve %s\n", path);
@@ -364,6 +381,15 @@ static void trace_hit(struct user_regs_struct curr_regs, struct process_t proc)
 	for (size_t i = 0; i < patch_info.size; ++i) {
 		if ((void*) ip == patch_info.entry[i].addr) {
 
+			// If we found the address, but it is probe, ignore it.
+			// Probes count and fix themselves.
+			//
+			// TODO: allocate probes in a separate buffer so we
+			//       don't have to handle this here and we allo get
+			//       better memory usage.
+			if (patch_info.entry[i].is_probe)
+				return;
+
 			if (try_compress_hit(i) == false)
 			{
 				trace_ctx.current_tb->hist[trace_ctx.offset].break_index = i;
@@ -410,7 +436,7 @@ static void apply_patches(struct process_t proc)
 	}
 }
 
-static void alloc_patches(char **patches, int patch_count)
+static void alloc_patches(struct patch_argv_info_t *patches, int patch_count)
 {
 	uint64_t addr;
 	char *endptr;
@@ -425,14 +451,15 @@ static void alloc_patches(char **patches, int patch_count)
 
 	for(int i = 0; i < patch_count; ++i) {
 
-		addr = strtoull(patches[i], &endptr, 16);
+		addr = strtoull(patches[i].argv, &endptr, 16);
 
 		// If not whole string matched (parsing error)
-		if (!(*patches[i] != '\0' && *endptr == '\0')) {
+		if (!(*patches[i].argv != '\0' && *endptr == '\0')) {
 			addr = 0;
 		}
 
 		patch_info.entry[i].addr = (void*) addr;
+		patch_info.entry[i].is_probe = patches[i].is_probe;
 	}
 }
 
@@ -454,7 +481,7 @@ static void alloc_hist()
 static void usage()
 {
 	printf(
-		"Usage: bintrace [..FLAGS] binpath addr0 [addr1 ...[addrN]] [-- tracee_arg1 ...[tracee_argN]]\n"
+		"Usage: bintrace [..FLAGS] binpath addr0 [addr1 ...[addrN]] [-p addr] [-- tracee_arg1 ...[tracee_argN]]\n"
 		" FLAGS:\n"
 		"  -r  | Register Dump Mode\n"
 		"  -c  | Disable colors\n"
@@ -464,7 +491,7 @@ static void usage()
 static void parse_cmdline(int argc, char **argv)
 {
 	int i = 1;
-	char *patches_argv[argc];
+	struct patch_argv_info_t patches_argv[argc];
 	size_t cur_patch_idx = 0;
 
 	opts.tracee_path = NULL;
@@ -487,11 +514,32 @@ static void parse_cmdline(int argc, char **argv)
 			if (opts.tracee_path == NULL) {
 				opts.tracee_path = argv[i];
 			} else {
-				patches_argv[cur_patch_idx] = argv[i];
+				patches_argv[cur_patch_idx].argv = argv[i];
+				patches_argv[cur_patch_idx].is_probe = 0;
 				++cur_patch_idx;
 			}
 		} else if (strcmp(argv[i], "-r") == 0) {
 			opts.regdump = 1;
+		} else if (strcmp(argv[i], "-p") == 0) {
+			void *probe_addr = 0;
+
+			// TODO; Should be handle both "-pADDR" and "-p ADDR"?
+			//       We now only support the later.
+
+			if (i + 1 >= argc) {
+				fprintf(stderr, "Error: missing probe address, after -p option.\n");
+				exit(1);
+			}
+
+			if (sscanf(argv[i + 1], "%p", &probe_addr) != 1) {
+				fprintf(stderr,
+					"Error: failed to parse probe address from \"%s\".\n", argv[i + 1]);
+				exit(1);
+			}
+
+			patches_argv[cur_patch_idx].argv = argv[i + 1];
+			patches_argv[cur_patch_idx].is_probe = 1;
+			++cur_patch_idx;
 		} else {
 			fprintf(stderr, "Warning: unknown option \"%s\". Ignored.\n", argv[i]);
 		}
@@ -520,7 +568,7 @@ static void parse_cmdline(int argc, char **argv)
  * 1. Parse argc, argv for how many patches and where
  * 2. Allocate needed structures for patching and history recording
  * 3. Load target binary into memory.
- * 4. Setup tracing.
+ * 4. Setup tracing and probes.
  * 5. Apply patches.
  * 6. Process for break events.
  * 7. Output gathered data and exit.
